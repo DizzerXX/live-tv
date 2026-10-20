@@ -1,0 +1,19 @@
+services:
+  live-tv-addon:
+    build: .
+    container_name: nuvio-live-tv-addon
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:7000:7000" # expose via your Nginx reverse proxy with HTTPS
+    environment:
+      REFRESH_INTERVAL_MINUTES: "360"
+      HEALTHCHECK_ENABLED: "true"
+      HEALTHCHECK_CONCURRENCY: "8"
+      EXCLUDE_GEO_BLOCKED: "false"
+      EXCLUDE_NOT_24_7: "false"
+      # EXTRA_ALLOWED_HOSTS: "example-broadcaster.com,another-cdn.net"
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
