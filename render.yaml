@@ -1,0 +1,31 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Dashboard → New → Blueprint → pick this repo. Render reads this file.
+services:
+  - type: web
+    name: nuvio-live-tv-addon
+    runtime: node
+    plan: free
+    region: singapore # closest to Malaysia; cannot be changed after creation
+    branch: main
+    # --include=dev: TypeScript is a devDependency and "prepare" compiles with it.
+    buildCommand: npm ci --include=dev
+    startCommand: node dist/index.js
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      # Free plan has 512 MB; keep the V8 heap well below it.
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=384
+      - key: REFRESH_INTERVAL_MINUTES
+        value: "360"
+      - key: HEALTHCHECK_ENABLED
+        value: "true"
+      # Free plan has 0.1 CPU; fewer parallel probes keeps requests responsive.
+      - key: HEALTHCHECK_CONCURRENCY
+        value: "4"
+      - key: EXCLUDE_GEO_BLOCKED
+        value: "false"
+      - key: EXCLUDE_NOT_24_7
+        value: "false"

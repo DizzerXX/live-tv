@@ -18,6 +18,9 @@ const CATALOG_RE = /^\/catalog\/([^/]+)\/([^/]+?)(?:\/([^/]+))?\.json$/;
 const META_RE = /^\/meta\/([^/]+)\/([^/]+)\.json$/;
 const STREAM_RE = /^\/stream\/([^/]+)\/([^/]+)\.json$/;
 const MAX_PATH_LENGTH = 1024;
+/** How long a data request may wait for the initial load after a cold start. */
+const FIRST_LOAD_WAIT_MS = 25_000;
+const DATA_PATH_RE = /^\/(?:catalog|meta|stream)\//;
 
 const BASE_HEADERS = {
   'access-control-allow-origin': '*',
@@ -96,7 +99,7 @@ function send(req: IncomingMessage, res: ServerResponse, result: JsonResult): vo
 }
 
 export function createAddonServer(state: AddonState, version: string): Server {
-  return createServer((req, res) => {
+  return createServer(async (req, res) => {
     try {
       if (req.method === 'OPTIONS') {
         res.writeHead(204, BASE_HEADERS);
@@ -113,6 +116,10 @@ export function createAddonServer(state: AddonState, version: string): Server {
         return;
       }
       const path = new URL(rawUrl, 'http://localhost').pathname;
+      if (!state.index && DATA_PATH_RE.test(path)) {
+        await state.waitForFirstLoad(FIRST_LOAD_WAIT_MS);
+        if (res.destroyed) return; // client gave up while waiting
+      }
       send(req, res, route(path, state, version));
     } catch (err) {
       log('error', 'request failed', { url: req.url, error: errorMessage(err) });

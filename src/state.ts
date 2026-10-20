@@ -19,6 +19,10 @@ export class AddonState {
   #lastSuccess: string | null = null;
   #lastError: string | null = null;
   #refreshing = false;
+  #markFirstLoadDone: () => void = () => {};
+  readonly #firstLoad = new Promise<void>((resolve) => {
+    this.#markFirstLoadDone = resolve;
+  });
 
   constructor(
     private readonly source: DatasetSource,
@@ -38,6 +42,23 @@ export class AddonState {
       lastError: this.#lastError,
       channels: this.#index?.byId.size ?? 0,
     };
+  }
+
+  /**
+   * Resolves once the first refresh attempt has finished (success or failure),
+   * or after `timeoutMs`. Lets requests that arrive during a cold start wait
+   * for data instead of failing.
+   */
+  async waitForFirstLoad(timeoutMs: number): Promise<void> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, timeoutMs);
+    });
+    try {
+      await Promise.race([this.#firstLoad, timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** Reloads data and rebuilds the index. Health checks run afterwards without blocking requests. */
@@ -61,6 +82,7 @@ export class AddonState {
       return;
     } finally {
       this.#refreshing = false;
+      this.#markFirstLoadDone();
     }
 
     if (this.healthcheckEnabled && this.#index) {

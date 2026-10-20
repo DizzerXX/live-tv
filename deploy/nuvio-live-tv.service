@@ -1,0 +1,35 @@
+# systemd unit for running the addon straight from a git checkout.
+# Install: see deploy/install.sh or the README "Run from GitHub" section.
+[Unit]
+Description=Nuvio Live TV addon (iptv-org)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nuvio-live-tv
+Group=nuvio-live-tv
+WorkingDirectory=/opt/nuvio-live-tv-addon
+EnvironmentFile=-/etc/nuvio-live-tv/env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/env node dist/index.js
+Restart=on-failure
+RestartSec=5
+
+# Hardening: read-only filesystem, no privilege escalation, no access to /home.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target

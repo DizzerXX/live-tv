@@ -1,17 +1,27 @@
 {
   "name": "nuvio-live-tv-addon",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Stremio-protocol live TV addon for Nuvio, built on iptv-org's publicly available streams.",
   "license": "MIT",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
+  "bin": {
+    "nuvio-live-tv-addon": "dist/index.js"
+  },
+  "files": [
+    "dist/**/*.js",
+    "!dist/**/*.test.js",
+    "!dist/testing/**"
+  ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22 <25"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "start": "node dist/index.js",
+    "start:env": "node --env-file=.env dist/index.js",
     "test": "npm run build && node --test \"dist/**/*.test.js\"",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

@@ -65,6 +65,30 @@ describe('HTTP server (end to end over a local dataset)', () => {
     assert.equal((await fetch(`${base}/nope`)).status, 404);
   });
 
+  it('holds data requests during a cold start until the first load finishes', async () => {
+    const cold = new AddonState(
+      localSource(dir),
+      buildCatalogDefinitions(),
+      { excludeGeoBlocked: false, excludeNot247: false, policy: createSourcePolicy() },
+      new HealthChecker(2, 1000),
+      false,
+    );
+    const coldServer = createAddonServer(cold, '1.0.0');
+    await new Promise<void>((resolve) => coldServer.listen(0, '127.0.0.1', resolve));
+    try {
+      const url = `http://127.0.0.1:${(coldServer.address() as AddressInfo).port}/catalog/tv/uk-news.json`;
+      const pending = fetch(url); // arrives before any data is loaded
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      await cold.refresh();
+      const res = await pending;
+      assert.equal(res.status, 200);
+      const body = (await res.json()) as { metas: unknown[] };
+      assert.equal(body.metas.length, 1);
+    } finally {
+      coldServer.close();
+    }
+  });
+
   it('rejects non-read methods and answers CORS preflight', async () => {
     assert.equal((await fetch(`${base}/manifest.json`, { method: 'POST' })).status, 405);
     assert.equal((await fetch(`${base}/manifest.json`, { method: 'OPTIONS' })).status, 204);

@@ -49,14 +49,75 @@ npm start         # http://localhost:7000/manifest.json
 
 Node 22+ is required. There are no runtime dependencies: the HTTP layer uses `node:http`.
 
-## Deploy (Docker + Nginx)
+## Run from GitHub (no Docker)
+
+Requires Node.js 22+ and git, **installed system-wide** (NodeSource, `dnf module`, or distro
+packages). An nvm install under `/root` or `/home` is invisible to the hardened service.
+
+**Quick test (one line, nothing to clone):**
+
+```bash
+PORT=7000 npx -y github:<you>/nuvio-live-tv-addon
+```
+
+npm clones the repo, runs the TypeScript build (`prepare` script) and starts the server. npx caches
+the build, so use `npx clear-npx-cache` or add `#<commit>` to the spec to pick up new commits.
+
+**Server install (systemd, auto-restart, survives reboots):**
+
+```bash
+git clone https://github.com/<you>/nuvio-live-tv-addon.git /tmp/nuvio-live-tv-addon
+sudo REPO_URL=https://github.com/<you>/nuvio-live-tv-addon.git \
+  bash /tmp/nuvio-live-tv-addon/deploy/install.sh
+```
+
+The script:
+
+- clones to `/opt/nuvio-live-tv-addon`, builds, and prunes dev dependencies;
+- creates a `nuvio-live-tv` system user;
+- writes config to `/etc/nuvio-live-tv/env` (from `.env.example`, only on first install);
+- installs and starts the hardened `nuvio-live-tv` systemd unit.
+
+To update, run the same command again. It pulls the latest `main`, rebuilds and restarts. For a
+private repo, use an SSH URL or a deploy key in `REPO_URL`.
+
+```bash
+systemctl status nuvio-live-tv
+journalctl -u nuvio-live-tv -f        # JSON logs
+sudoedit /etc/nuvio-live-tv/env && sudo systemctl restart nuvio-live-tv
+```
+
+**Manual run (for development):** `npm ci && cp .env.example .env && npm run start:env`.
+
+## Deploy on Render (free plan)
+
+`render.yaml` is a Render Blueprint. It sets up a free Node web service in Singapore, with Node 24,
+the build and start commands, `/health` as the health check, and memory-safe settings.
+
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint**, connect GitHub, pick the repo, then **Apply**.
+3. Wait for the first deploy, then open `https://<service>.onrender.com/manifest.json` to check it.
+4. In Nuvio, install `https://<service>.onrender.com/manifest.json`.
+
+Free-plan behaviour:
+
+- **Spin-down.** The service sleeps after 15 minutes without traffic, and waking takes about a minute.
+  Requests that arrive during startup wait up to 25 seconds for the channel data instead of failing.
+- **Keeping it awake.** An external pinger on `/health` every 10 minutes keeps it awake. One service
+  running all month uses about 744 of the 750 free hours per workspace, so nothing else on the free
+  plan in that workspace can also run 24/7.
+- **Bandwidth.** Video never passes through Render; Nuvio pulls streams straight from the broadcaster
+  CDNs. The addon only serves small JSON responses.
+
+## Deploy with Docker (alternative)
 
 ```bash
 docker compose up -d --build
 ```
 
-The compose file binds to `127.0.0.1:7000`. Put it behind Nginx with HTTPS, because Nuvio needs a
-public HTTPS URL:
+## HTTPS via Nginx
+
+Both setups listen on `127.0.0.1:7000`. Nuvio needs a public HTTPS URL, so proxy it through Nginx:
 
 ```nginx
 server {
@@ -115,5 +176,8 @@ src/
   addon/protocol.ts    manifest / catalog / meta / stream responses
   server.ts            node:http router (CORS, validation, caching headers)
   state.ts             refresh lifecycle (keeps last good index on failure)
-  index.ts             bootstrap
+  index.ts             bootstrap (also the npx bin entry)
+deploy/
+  install.sh           clone/update + build + systemd install (idempotent)
+  nuvio-live-tv.service  hardened systemd unit
 ```
