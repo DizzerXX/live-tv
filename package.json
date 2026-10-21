@@ -1,6 +1,6 @@
 {
   "name": "nuvio-live-tv-addon",
-  "version": "1.2.0",
+  "version": "3.0.0",
   "description": "Stremio-protocol live TV addon for Nuvio, built on iptv-org's publicly available streams.",
   "license": "MIT",
   "private": true,

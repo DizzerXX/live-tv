@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { createSourcePolicy } from './catalog/policy.js';
-import { buildCatalogDefinitions } from './config.js';
+import { buildCatalogPlan } from './config.js';
 import { HealthChecker } from './health/checker.js';
 import { localSource } from './iptv/source.js';
 import { createAddonServer } from './server.js';
@@ -25,7 +25,7 @@ describe('HTTP server (end to end over a local dataset)', () => {
     }
     const state = new AddonState(
       localSource(dir),
-      buildCatalogDefinitions(),
+      buildCatalogPlan(),
       { excludeGeoBlocked: false, excludeNot247: false, policy: createSourcePolicy() },
       new HealthChecker(2, 1000),
       false,
@@ -47,13 +47,13 @@ describe('HTTP server (end to end over a local dataset)', () => {
     assert.equal(res.headers.get('access-control-allow-origin'), '*');
     const body = (await res.json()) as { version: string; catalogs: unknown[] };
     assert.equal(body.version, '9.9.9');
-    assert.equal(body.catalogs.length, 12);
+    assert.equal(body.catalogs.length, 6);
   });
 
   it('serves catalogs with and without extra args', async () => {
-    const plain = (await (await fetch(`${base}/catalog/tv/uk-news.json`)).json()) as { metas: { name: string }[] };
+    const plain = (await (await fetch(`${base}/catalog/tv/news/genre=UK.json`)).json()) as { metas: { name: string }[] };
     assert.deepEqual(plain.metas.map((m) => m.name), ['BBC News']);
-    const searched = (await (await fetch(`${base}/catalog/tv/uk-news/search=zzz.json`)).json()) as { metas: unknown[] };
+    const searched = (await (await fetch(`${base}/catalog/tv/news/genre=UK&search=zzz.json`)).json()) as { metas: unknown[] };
     assert.equal(searched.metas.length, 0);
   });
 
@@ -68,7 +68,7 @@ describe('HTTP server (end to end over a local dataset)', () => {
   it('holds data requests during a cold start until the first load finishes', async () => {
     const cold = new AddonState(
       localSource(dir),
-      buildCatalogDefinitions(),
+      buildCatalogPlan(),
       { excludeGeoBlocked: false, excludeNot247: false, policy: createSourcePolicy() },
       new HealthChecker(2, 1000),
       false,
@@ -76,7 +76,7 @@ describe('HTTP server (end to end over a local dataset)', () => {
     const coldServer = createAddonServer(cold, '1.0.0');
     await new Promise<void>((resolve) => coldServer.listen(0, '127.0.0.1', resolve));
     try {
-      const url = `http://127.0.0.1:${(coldServer.address() as AddressInfo).port}/catalog/tv/uk-news.json`;
+      const url = `http://127.0.0.1:${(coldServer.address() as AddressInfo).port}/catalog/tv/news/genre=UK.json`;
       const pending = fetch(url); // arrives before any data is loaded
       await new Promise((resolve) => setTimeout(resolve, 50));
       await cold.refresh();

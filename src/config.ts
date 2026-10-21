@@ -1,11 +1,15 @@
 /**
  * Static catalog definitions and runtime configuration.
  *
- * Catalog membership is driven by iptv-org category IDs. Edit
- * CATEGORY_GROUPS or COUNTRY_RULES to change what each catalog contains.
+ * There is one catalog per category group (Sports, News, …), each combining
+ * every region. Regions are offered as the catalog's "genre" filter, which
+ * Nuvio shows as a dropdown on the Discover screen.
  */
 
 export type CategoryGroup = 'sports' | 'news' | 'movies' | 'entertainment' | 'kids';
+
+/** Catalog order in the manifest (and in Nuvio's home rows). */
+export const CATEGORY_GROUP_ORDER: readonly CategoryGroup[] = ['sports', 'news', 'movies', 'entertainment', 'kids'];
 
 /** iptv-org category IDs that make up each group. */
 export const CATEGORY_GROUPS: Readonly<Record<CategoryGroup, readonly string[]>> = {
@@ -27,27 +31,258 @@ const GROUP_LABELS: Readonly<Record<CategoryGroup, string>> = {
 export interface CountryRule {
   /** iptv-org country code (note: iptv-org uses "UK", not "GB"). */
   readonly code: string;
+  /** Region label shown in the genre filter. */
   readonly label: string;
   /** ISO 639-3 language a stream's feed must carry, or null for any language. */
   readonly language: string | null;
-  /** 'all' = one catalog with every category; otherwise one catalog per group. */
-  readonly groups: 'all' | readonly CategoryGroup[];
+  /**
+   * Where channels go when none of their categories match a group.
+   * null = such channels are left out.
+   */
+  readonly fallbackGroup: CategoryGroup | null;
+  /**
+   * Give this region a catalog of its own (every channel, any category)
+   * instead of spreading it across the category catalogs.
+   */
+  readonly ownCatalog: { readonly id: string; readonly name: string } | null;
 }
 
+/** Order here is also the sort order inside each catalog (local channels first). */
 export const COUNTRY_RULES: readonly CountryRule[] = [
-  { code: 'MY', label: 'Malaysia', language: null, groups: 'all' },
-  { code: 'SG', label: 'Singapore', language: 'eng', groups: 'all' },
+  // Every Malaysian channel, in its own catalog.
+  { code: 'MY', label: 'Malaysia', language: null, fallbackGroup: null, ownCatalog: { id: 'malaysia', name: 'Malaysia' } },
+  // "All Singapore channels": anything uncategorised lands in Entertainment.
+  { code: 'SG', label: 'Singapore', language: 'eng', fallbackGroup: 'entertainment', ownCatalog: null },
+  { code: 'UK', label: 'UK', language: 'eng', fallbackGroup: null, ownCatalog: null },
+  { code: 'US', label: 'USA', language: 'eng', fallbackGroup: null, ownCatalog: null },
+];
+
+/**
+ * Individual channels added from any country, by iptv-org channel ID (shown on
+ * each channel page at https://iptv-org.github.io, e.g. "AlJazeera.qa"). They
+ * join the catalogs matching their categories and appear under the
+ * "International" region. They still pass the allowlist, denylist and health check.
+ */
+export interface ExtraChannelRule {
+  readonly id: string;
+  /** ISO 639-3 language a stream's feed must carry, or null for any language. */
+  readonly language: string | null;
+}
+
+export const EXTRA_REGION_LABEL = 'International';
+
+export const EXTRA_CHANNELS: readonly ExtraChannelRule[] = [
+  // International English news
+  { id: 'AlJazeera.qa', language: 'eng' },
+  { id: 'DW.de', language: 'eng' },
+  { id: 'France24.fr', language: 'eng' },
+  { id: 'EuronewsEnglish.fr', language: 'eng' },
+  { id: 'CBCNewsNetwork.ca', language: 'eng' },
+  { id: 'ABCNews.au', language: 'eng' },
+  { id: 'NHKWorldJapan.jp', language: 'eng' }, // only allowed stream is flagged geo-blocked
+  { id: 'WION.in', language: 'eng' },
+  { id: 'IndiaToday.in', language: 'eng' },
+  { id: 'ArirangTV.kr', language: 'eng' },
+  { id: 'CGTN.cn', language: 'eng' },
+  { id: 'i24NEWSEnglishWorld.il', language: 'eng' },
+  { id: 'AfricanewsEnglish.fr', language: 'eng' },
+];
+
+/**
+ * Official broadcaster platforms. Channels mapped below get a "Watch on …"
+ * entry that opens the platform in a browser (Stremio `externalUrl`). This is
+ * how channels with no usable direct stream are still listed, and a fallback
+ * for those that have one. Nothing is played through the addon for these.
+ */
+export interface OfficialPlatform {
+  readonly name: string;
+  readonly url: string;
+  /** Shown under the entry, e.g. that an account may be needed. */
+  readonly note: string | null;
+}
+
+const RTMKLIK: OfficialPlatform = { name: 'RTMKlik', url: 'https://rtmklik.rtm.gov.my/', note: null };
+const MANA_MANA: OfficialPlatform = { name: 'MYTV Mana-Mana', url: 'https://www.mana2.my/live-tv', note: null };
+const TONTON: OfficialPlatform = { name: 'Tonton', url: 'https://watch.tonton.com.my/', note: 'may require a free account' };
+
+/**
+ * iptv-org channel ID → official platform carrying it live for free.
+ * Lineups are from the platforms' published channel lists (2024); check and
+ * update when a platform changes its line-up. A mapped channel is listed even
+ * without a direct stream. Every other filter (denylist, iptv-org's DMCA
+ * blocklist, closed channels) still applies, which is why Astro's free sooka
+ * channels are not here: Astro had them removed from iptv-org.
+ */
+export const OFFICIAL_WATCH_PAGES: Readonly<Record<string, OfficialPlatform>> = {
+  // RTM
+  'TV1.my': RTMKLIK,
+  'TV2.my': RTMKLIK,
+  'Okey.my': RTMKLIK,
+  'BeritaRTM.my': RTMKLIK,
+  'SukanPlus.my': RTMKLIK,
+  'RTMParlimenDewanRakyat.my': RTMKLIK,
+  // Media Prima
+  'TV3.my': TONTON,
+  '8TV.my': TONTON,
+  'NTV7.my': TONTON,
+  'TV9.my': TONTON,
+  'DramaSangat.my': TONTON,
+  // MYTV Mana-Mana
+  'TVAlhijrah.my': MANA_MANA,
+  'BernamaTV.my': MANA_MANA,
+  'TVS.my': MANA_MANA,
+  'TVIKIM.my': MANA_MANA,
+  'SelangorTV.my': MANA_MANA,
+};
+
+/**
+ * Restricts one region inside one catalog to a hand-picked, ranked list.
+ * The first `max` channels in `ranked` that currently have a live stream are
+ * shown, so entries beyond `max` act as backups. iptv-org has no popularity
+ * data; the order is an editorial choice.
+ */
+export interface RegionCuration {
+  readonly group: CategoryGroup;
+  /** Region label, e.g. "USA". */
+  readonly region: string;
+  readonly max: number;
+  /** iptv-org channel IDs in priority order. */
+  readonly ranked: readonly string[];
+}
+
+/** Maximum US channels per catalog. Ranked entries past this are backups. */
+const US_TOP_N = 15;
+
+export const REGION_CURATIONS: readonly RegionCuration[] = [
   {
-    code: 'UK',
-    label: 'UK',
-    language: 'eng',
-    groups: ['sports', 'news', 'movies', 'entertainment', 'kids'],
+    group: 'sports',
+    region: 'USA',
+    max: US_TOP_N,
+    ranked: [
+      'NFLChannel.us',
+      'MLB.us',
+      'NHLNetwork.us',
+      'PGATour.us',
+      'TennisChannel.us',
+      'CBSSportsHQ.us',
+      'NBCSportsNOW.us',
+      'CBSSportsGolazoNetwork.us',
+      'FuboSportsNetwork.us',
+      'ESPN8TheOcho.us',
+      'Stadium.us',
+      'beINSPORTSXTRA.us',
+      'BellatorMMA.us',
+      'PFLMMA.us',
+      'WillowSports.us',
+      // Backups:
+      'SportsGrid.us',
+      'DraftKingsNetwork.us',
+      'RallyTV.us',
+    ],
   },
   {
-    code: 'US',
-    label: 'USA',
-    language: 'eng',
-    groups: ['sports', 'news', 'movies', 'entertainment', 'kids'],
+    group: 'news',
+    region: 'USA',
+    max: US_TOP_N,
+    ranked: [
+      'CBSNews247.us',
+      'ABCNewsLive.us',
+      'NBCNewsNOW.us',
+      'LiveNOWfromFOX.us',
+      'CNNInternational.us',
+      'BloombergTV.us',
+      'ReutersTV.us',
+      'ScrippsNews.us',
+      'NewsmaxTV.us',
+      'YahooFinance.us',
+      'TODAYAllDay.us',
+      'USATODAY.us',
+      'FoxWeather.us',
+      'AccuWeatherNOW.us',
+      'CheddarNews.us',
+      // Backups:
+      'Newsy.us',
+      'WeatherNation.us',
+      'BloombergOriginals.us',
+    ],
+  },
+  {
+    group: 'movies',
+    region: 'USA',
+    max: US_TOP_N,
+    ranked: [
+      'ParamountMovieChannel.us',
+      'HallmarkMoviesMore.us',
+      'MovieSphere.us',
+      'PlutoTVActionMovies.us',
+      'PlutoTVComedyMovies.us',
+      'PlutoTVDramaMovies.us',
+      'PlutoTVThrillers.us',
+      'PlutoTVHorror.us',
+      'PlutoTVRomance.us',
+      'PlutoTVSciFi.us',
+      'PlutoTVWesterns.us',
+      'BETCinema.us',
+      'GravitasMovies.us',
+      'TheFilmDetective.us',
+      '24HourFreeMovies.us',
+      // Backups:
+      'PlutoTVCrimeMovies.us',
+      'FrightFlix.us',
+      'ClassicMoviesChannel.us',
+    ],
+  },
+  {
+    group: 'entertainment',
+    region: 'USA',
+    max: US_TOP_N,
+    ranked: [
+      'ABC.us',
+      'CBS.us',
+      'NBC.us',
+      'Fox.us',
+      'ComedyCentral.us',
+      'MeTV.us',
+      'MTVPlutoTV.us',
+      'EntertainmentTonight.us',
+      'TMZ.us',
+      'NCIS.us',
+      'StarTrek.us',
+      'TheWalkingDeadUniverse.us',
+      'SouthPark.us',
+      'Survivor.us',
+      'ThePriceIsRight.us',
+      // Backups:
+      'Buzzr.us',
+      'Comet.us',
+      'IONTV.us', // only stream is flagged geo-blocked
+    ],
+  },
+  {
+    group: 'kids',
+    region: 'USA',
+    max: US_TOP_N,
+    ranked: [
+      'NickelodeonPlutoTV.us',
+      'NickJrPlutoTV.us',
+      'Nicktoons.us',
+      'SpongeBobSquarePants.us',
+      'PBSKids.us',
+      'DoraTV.us',
+      'PeppaPig.us',
+      'BabySharkTV.us',
+      'LEGOKidsTV.us',
+      'SonicTV.us',
+      'TransformersTV.us',
+      'SmurfTV.us',
+      'Crunchyroll.us',
+      'RyanandFriends.us',
+      'GarfieldandFriends.us',
+      // Backups:
+      'PlutoTVAnime.us',
+      'KartoonChannel.us',
+      'SuperSimpleSongs.us',
+    ],
   },
 ];
 
@@ -63,6 +298,8 @@ export const COUNTRY_RULES: readonly CountryRule[] = [
 export const ALLOWED_HOST_SUFFIXES: readonly string[] = [
   // FAST / free OTT platforms and playout providers
   'jmp2.uk', // redirector for Samsung TV Plus, Pluto TV, Plex and Roku free channels
+  'plex.tv',
+  'samsungtvplus.com',
   'amagi.tv',
   'wurl.tv',
   'wurl.com',
@@ -124,28 +361,88 @@ export const DENIED_CHANNEL_NAME_PATTERNS: readonly RegExp[] = [
   /\bbeIN SPORTS\b(?! XTRA)/i,
 ];
 
-export interface CatalogDefinition {
-  readonly id: string;
-  readonly name: string;
-  readonly country: CountryRule;
-  /** null = every category for this country. */
-  readonly categories: ReadonlySet<string> | null;
+export type CatalogDefinition =
+  | {
+      readonly kind: 'category';
+      /** Equal to the category group, e.g. "sports". */
+      readonly id: CategoryGroup;
+      readonly name: string;
+      readonly categories: ReadonlySet<string>;
+      /** Regions offered in this catalog's genre filter. */
+      readonly genreOptions: readonly string[];
+    }
+  | {
+      readonly kind: 'region';
+      readonly id: string;
+      readonly name: string;
+      /** Region label whose channels fill this catalog. */
+      readonly region: string;
+      readonly genreOptions: readonly string[];
+    };
+
+/** Everything that decides catalog membership, bundled for buildIndex. */
+export interface CatalogPlan {
+  readonly definitions: readonly CatalogDefinition[];
+  readonly countries: readonly CountryRule[];
+  readonly extras: readonly ExtraChannelRule[];
+  /** Region labels in display/sort order; used as the genre filter options. */
+  readonly regions: readonly string[];
+  readonly curations: readonly RegionCuration[];
+  readonly watchPages: ReadonlyMap<string, OfficialPlatform>;
 }
 
-export function buildCatalogDefinitions(rules: readonly CountryRule[] = COUNTRY_RULES): CatalogDefinition[] {
-  return rules.flatMap((rule): CatalogDefinition[] => {
-    const prefix = rule.code.toLowerCase();
-    if (rule.groups === 'all') {
-      const suffix = rule.language === 'eng' ? 'English' : 'All Channels';
-      return [{ id: `${prefix}-all`, name: `${rule.label} ${suffix}`, country: rule, categories: null }];
-    }
-    return rule.groups.map((group) => ({
-      id: `${prefix}-${group}`,
-      name: `${rule.label} ${GROUP_LABELS[group]}`,
-      country: rule,
-      categories: new Set(CATEGORY_GROUPS[group]),
-    }));
-  });
+export function buildCatalogPlan(
+  countries: readonly CountryRule[] = COUNTRY_RULES,
+  extras: readonly ExtraChannelRule[] = EXTRA_CHANNELS,
+  curations: readonly RegionCuration[] = REGION_CURATIONS,
+  watchPages: Readonly<Record<string, OfficialPlatform>> = OFFICIAL_WATCH_PAGES,
+): CatalogPlan {
+  for (const [id, platform] of Object.entries(watchPages)) {
+    if (!platform.url.startsWith('https://')) throw new Error(`Watch page for "${id}" must be an https URL`);
+  }
+  const codes = countries.map((c) => c.code);
+  const dupCountry = codes.find((c, i) => codes.indexOf(c) !== i);
+  if (dupCountry) throw new Error(`Duplicate country rule "${dupCountry}"`);
+  const extraIds = extras.map((e) => e.id);
+  const dupExtra = extraIds.find((id, i) => extraIds.indexOf(id) !== i);
+  if (dupExtra) throw new Error(`Duplicate extra channel "${dupExtra}"`);
+
+  const regions = [...countries.map((c) => c.label), ...(extras.length > 0 ? [EXTRA_REGION_LABEL] : [])];
+  const curationKeys = new Set<string>();
+  for (const c of curations) {
+    if (!regions.includes(c.region)) throw new Error(`Curation region "${c.region}" is not a configured region`);
+    if (!Number.isInteger(c.max) || c.max < 1) throw new Error(`Curation max must be a positive integer`);
+    const key = `${c.group}/${c.region}`;
+    if (curationKeys.has(key)) throw new Error(`Duplicate curation for ${key}`);
+    curationKeys.add(key);
+  }
+
+  const ownRegions = new Set(countries.filter((c) => c.ownCatalog).map((c) => c.label));
+  const sharedRegions = regions.filter((r) => !ownRegions.has(r));
+
+  // Region catalogs first (local first), then the shared category catalogs.
+  const regionCatalogs: CatalogDefinition[] = countries.flatMap((c) =>
+    c.ownCatalog
+      ? [{ kind: 'region' as const, id: c.ownCatalog.id, name: c.ownCatalog.name, region: c.label, genreOptions: [] }]
+      : [],
+  );
+  const categoryCatalogs: CatalogDefinition[] = CATEGORY_GROUP_ORDER.map((group) => ({
+    kind: 'category' as const,
+    id: group,
+    name: GROUP_LABELS[group],
+    categories: new Set(CATEGORY_GROUPS[group]),
+    genreOptions: sharedRegions,
+  }));
+
+  const definitions = [...regionCatalogs, ...categoryCatalogs];
+  const ids = definitions.map((d) => d.id);
+  const dupId = ids.find((id, i) => ids.indexOf(id) !== i);
+  if (dupId) throw new Error(`Duplicate catalog id "${dupId}"`);
+  for (const c of curations) {
+    if (ownRegions.has(c.region)) throw new Error(`Curation region "${c.region}" has its own catalog`);
+  }
+
+  return { definitions, countries, extras, regions, curations, watchPages: new Map(Object.entries(watchPages)) };
 }
 
 export interface AppConfig {

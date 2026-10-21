@@ -1,17 +1,23 @@
 # Nuvio Live TV Addon
 
-A Stremio-protocol addon that gives Nuvio 12 live TV catalogs. The channels come from the
-[iptv-org](https://github.com/iptv-org/api) public stream index, filtered down to official
-broadcaster and FAST (free ad-supported) sources.
+A Stremio-protocol addon that gives Nuvio six live TV catalogs: Malaysia, plus Sports, News, Movies,
+Entertainment and Kids. The channels come from the [iptv-org](https://github.com/iptv-org/api)
+public stream index, filtered down to official broadcaster and FAST (free ad-supported) sources.
 
 ## Catalogs
 
-| Catalog | Rule |
+**Malaysia** has its own catalog with every Malaysian channel, in any language or category. The five
+category catalogs combine the other regions. Inside them, channels are ordered by region (Singapore,
+UK, USA, International), then by name. On Nuvio's **Discover** screen, each category catalog has a
+**genre** dropdown that filters by region.
+
+| Region | Rule |
 |---|---|
-| Malaysia All Channels | Country `MY`, any language, any category |
-| Singapore English | Country `SG`, English feeds, any category |
-| UK Sports / News / Movies / Entertainment / Kids | Country `UK`, English feeds |
-| USA Sports / News / Movies / Entertainment / Kids | Country `US`, English feeds |
+| Malaysia | Country `MY`, any language, any category, in its own **Malaysia** catalog |
+| Singapore | Country `SG`, English feeds. Channels outside the five categories go to Entertainment |
+| UK | Country `UK`, English feeds, five categories only |
+| USA | Country `US`, English feeds, five categories only. **Each catalog is capped at the top 15 curated US channels** |
+| International | Individual channel IDs from any country (`EXTRA_CHANNELS`), English feeds |
 
 Category groups map to iptv-org category IDs in `src/config.ts` (`CATEGORY_GROUPS`):
 
@@ -21,7 +27,51 @@ Category groups map to iptv-org category IDs in `src/config.ts` (`CATEGORY_GROUP
 - **Entertainment:** `entertainment`, `general`, `series`, `comedy`, `lifestyle`
 - **Kids:** `kids`, `animation`, `family`
 
-Channels with no category in iptv-org only appear in the two "all" catalogs (Malaysia and Singapore).
+A channel with several categories appears in each matching catalog.
+
+### Official watch pages (Malaysia)
+
+Several Malaysian channels have no direct stream the addon can use, but are free on an official
+platform. `OFFICIAL_WATCH_PAGES` in `src/config.ts` maps them to that platform. Nuvio shows a
+**"Watch on …"** entry that opens the platform externally, after any direct streams:
+
+| Platform | Operator | Channels |
+|---|---|---|
+| [RTMKlik](https://rtmklik.rtm.gov.my/) | RTM | TV1, TV2, Okey, Berita RTM, Sukan+, RTM Parlimen Dewan Rakyat |
+| [Tonton](https://watch.tonton.com.my/) | Media Prima | TV3, 8TV, NTV7, TV9, Drama Sangat |
+| [MYTV Mana-Mana](https://www.mana2.my/live-tv) | MYTV Broadcasting | TV Alhijrah, Bernama TV, TVS, TVIKIM, SelangorTV |
+
+The line-ups come from each platform's published channel list as of 2024; update the map if a platform
+changes. Watch pages don't bypass any filter: Astro channels stay out because Astro had them removed
+from iptv-org (DMCA blocklist).
+
+### Extra channels (International)
+
+`EXTRA_CHANNELS` in `src/config.ts` adds individual channels from any country by iptv-org channel ID.
+They join the catalogs that match their categories:
+
+```ts
+export const EXTRA_CHANNELS: readonly ExtraChannelRule[] = [
+  { id: 'AlJazeera.qa', language: 'eng' }, // add more IDs here
+];
+```
+
+Channel IDs appear on each channel's page at [iptv-org.github.io](https://iptv-org.github.io), for
+example `AlJazeera.qa`. Extra channels still pass the allowlist, denylist, upstream blocklist and
+health check.
+
+### Curated regions (US top 15 per catalog)
+
+`REGION_CURATIONS` in `src/config.ts` limits one region inside one catalog to a ranked list. The first
+`max` channels with a live stream are shown, so entries past `max` act as backups:
+
+```ts
+{ group: 'sports', region: 'USA', max: US_TOP_N, ranked: ['NFLChannel.us', 'MLB.us', /* ... */] }
+```
+
+iptv-org has no popularity data, so the ranking is an editorial choice. Edit the list to change the
+picks or their order, or `US_TOP_N` to change the cap for all US catalogs. Each list has 15 picks plus
+3 backups. Ranked channels must still pass every other filter.
 
 ## Source filtering
 

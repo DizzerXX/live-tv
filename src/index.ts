@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from 'node:fs';
 import { createSourcePolicy } from './catalog/policy.js';
-import { buildCatalogDefinitions, loadConfig } from './config.js';
+import { buildCatalogPlan, loadConfig } from './config.js';
 import { HealthChecker } from './health/checker.js';
 import { localSource, remoteSource } from './iptv/source.js';
 import { createAddonServer } from './server.js';
@@ -20,7 +20,7 @@ async function main(): Promise<void> {
   const health = new HealthChecker(config.healthcheck.concurrency, config.healthcheck.timeoutMs);
   const state = new AddonState(
     source,
-    buildCatalogDefinitions(),
+    buildCatalogPlan(),
     {
       excludeGeoBlocked: config.excludeGeoBlocked,
       excludeNot247: config.excludeNot247,

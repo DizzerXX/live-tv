@@ -3,7 +3,7 @@
  * refresh keeps serving the last good index.
  */
 import { buildIndex, type BuildOptions, type CatalogIndex } from './catalog/build.js';
-import type { CatalogDefinition } from './config.js';
+import type { CatalogPlan } from './config.js';
 import type { HealthChecker } from './health/checker.js';
 import type { DatasetSource } from './iptv/source.js';
 import { errorMessage, log } from './util/log.js';
@@ -26,7 +26,7 @@ export class AddonState {
 
   constructor(
     private readonly source: DatasetSource,
-    readonly definitions: readonly CatalogDefinition[],
+    readonly plan: CatalogPlan,
     private readonly buildOptions: Omit<BuildOptions, 'now'>,
     readonly health: HealthChecker,
     private readonly healthcheckEnabled: boolean,
@@ -67,7 +67,7 @@ export class AddonState {
     this.#refreshing = true;
     try {
       const dataset = await this.source.load();
-      const index = buildIndex(dataset, this.definitions, { ...this.buildOptions, now: new Date() });
+      const index = buildIndex(dataset, this.plan, { ...this.buildOptions, now: new Date() });
       this.#index = index;
       this.#lastSuccess = new Date().toISOString();
       this.#lastError = null;

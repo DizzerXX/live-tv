@@ -49,7 +49,7 @@ function decodeSegment(segment: string): string | null {
 
 function route(path: string, state: AddonState, version: string): JsonResult {
   if (path === '/' || path === '/manifest.json') {
-    return { status: 200, body: buildManifest(state.definitions, version), maxAge: 3600 };
+    return { status: 200, body: buildManifest(state.plan, version), maxAge: 3600 };
   }
   if (path === '/health') {
     return { status: 200, body: { refresh: state.status, streams: state.health.summary }, maxAge: 0 };

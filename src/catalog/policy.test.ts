@@ -10,6 +10,9 @@ describe('createSourcePolicy', () => {
     assert.ok(policy.isAllowedStreamUrl('https://a.b.amagi.tv/playlist.m3u8'));
     assert.ok(policy.isAllowedStreamUrl('https://live.example-broadcaster.tv/x.m3u8'));
     assert.ok(policy.isAllowedStreamUrl('https://abc.mediatailor.us-east-1.amazonaws.com/v1/master/x.m3u8'));
+    for (const host of ['vs-hls-push-uk.live.fastly.md.bbci.co.uk', 'www.pbs.org', 'live.bloomberg.com', 'cbsn-us.cbsnstream.cbsnews.com', 'epg.provider.plex.tv', 'live.samsungtvplus.com']) {
+      assert.ok(policy.isAllowedStreamUrl(`https://${host}/master.m3u8`), host);
+    }
   });
 
   it('rejects look-alike, raw-IP, credentialed and non-HTTP sources', () => {

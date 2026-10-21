@@ -76,17 +76,22 @@ describe('probeStream', () => {
     const channel = {
       id: 'Local.us',
       name: 'Local',
+      region: 'USA',
       country: 'US',
       categories: ['news'],
       logo: null,
       website: null,
       streams: [stream(`http://localhost:${port}/a.m3u8`), stream(`http://127.0.0.1:${port}/b.m3u8`)],
+      watchPages: [],
     };
     const checker = new HealthChecker(2, 2000);
     assert.equal(checker.hasLiveStream(channel), true); // optimistic before first run
-    const ran = await checker.run({ definitions: [], byCatalog: new Map(), byId: new Map([[channel.id, channel]]) });
+    const ran = await checker.run({ definitions: [], regions: [], limits: new Map(), byCatalog: new Map(), byId: new Map([[channel.id, channel]]) });
     assert.equal(ran, true);
     assert.equal(checker.hasLiveStream(channel), false);
+    // An official watch page keeps the channel listed even with every stream dead.
+    const withPage = { ...channel, watchPages: [{ name: 'RTMKlik', url: 'https://rtmklik.rtm.gov.my/', note: null }] };
+    assert.equal(checker.hasLiveStream(withPage), true);
     assert.deepEqual(
       { alive: checker.summary.alive, dead: checker.summary.dead },
       { alive: 0, dead: 2 },

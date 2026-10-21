@@ -45,8 +45,9 @@ export class HealthChecker {
     return channel.streams.filter((s) => this.isAlive(s));
   }
 
+  /** True if any stream is alive, or the channel links to an official platform page. */
   hasLiveStream(channel: ChannelEntry): boolean {
-    return channel.streams.some((s) => this.isAlive(s));
+    return channel.watchPages.length > 0 || channel.streams.some((s) => this.isAlive(s));
   }
 
   /** Returns false if a run was already in progress. */

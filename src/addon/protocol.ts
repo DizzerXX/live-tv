@@ -4,31 +4,41 @@
  *
  * Every function here is pure: index + health state in, JSON-ready object out.
  */
-import type { CatalogDefinition } from '../config.js';
+import type { CatalogPlan, OfficialPlatform } from '../config.js';
 import type { CatalogIndex, ChannelEntry, StreamEntry } from '../catalog/build.js';
-import type { HealthChecker } from '../health/checker.js';
+
+/** The part of HealthChecker the responses depend on. */
+export interface StreamHealth {
+  hasLiveStream(channel: ChannelEntry): boolean;
+  liveStreams(channel: ChannelEntry): StreamEntry[];
+}
 
 export const CONTENT_TYPE = 'tv';
 export const ID_PREFIX = 'iptvorg:';
 export const PAGE_SIZE = 100;
 const MAX_SEARCH_LENGTH = 100;
+const MAX_GENRE_LENGTH = 50;
 const CHANNEL_ID_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
 
-const COUNTRY_NAMES: Readonly<Record<string, string>> = {
-  MY: 'Malaysia',
-  SG: 'Singapore',
-  UK: 'United Kingdom',
-  US: 'United States',
-};
+const regionNames = new Intl.DisplayNames(['en'], { type: 'region' });
 
-export function buildManifest(definitions: readonly CatalogDefinition[], version: string): Record<string, unknown> {
+/** iptv-org uses "UK" where ISO 3166-1 uses "GB". */
+function countryName(code: string): string {
+  try {
+    return regionNames.of(code === 'UK' ? 'GB' : code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+export function buildManifest(plan: CatalogPlan, version: string): Record<string, unknown> {
   return {
     id: 'community.nuvio.livetv.iptvorg',
     version,
     name: 'Live TV (iptv-org)',
     description:
-      'Free-to-air and free ad-supported live channels for Malaysia, Singapore, the UK and the US, ' +
-      'sourced from the iptv-org public stream index.',
+      `Free-to-air and free ad-supported live channels (${plan.regions.join(', ')}), ` +
+      'grouped by category and sourced from the iptv-org public stream index.',
     types: [CONTENT_TYPE],
     idPrefixes: [ID_PREFIX],
     resources: [
@@ -36,32 +46,41 @@ export function buildManifest(definitions: readonly CatalogDefinition[], version
       { name: 'meta', types: [CONTENT_TYPE], idPrefixes: [ID_PREFIX] },
       { name: 'stream', types: [CONTENT_TYPE], idPrefixes: [ID_PREFIX] },
     ],
-    catalogs: definitions.map((d) => ({
-      type: CONTENT_TYPE,
-      id: d.id,
-      name: d.name,
-      extra: [
-        { name: 'search', isRequired: false },
-        { name: 'skip', isRequired: false },
-      ],
-    })),
+    catalogs: plan.definitions.map((d) => {
+      // "genre" carries the region filter; Nuvio shows it as a dropdown on Discover.
+      const hasGenre = d.genreOptions.length > 0;
+      return {
+        type: CONTENT_TYPE,
+        id: d.id,
+        name: d.name,
+        ...(hasGenre ? { genres: d.genreOptions } : {}),
+        extra: [
+          ...(hasGenre ? [{ name: 'genre', isRequired: false, options: d.genreOptions }] : []),
+          { name: 'search', isRequired: false },
+          { name: 'skip', isRequired: false },
+        ],
+        extraSupported: [...(hasGenre ? ['genre'] : []), 'search', 'skip'],
+      };
+    }),
     behaviorHints: { configurable: false, configurationRequired: false },
   };
 }
 
 export interface CatalogExtra {
+  readonly genre: string | null;
   readonly search: string | null;
   readonly skip: number;
 }
 
-/** Parses the `search=foo&skip=100` path segment. Invalid values fall back to defaults. */
+/** Parses the `genre=Malaysia&search=foo&skip=100` path segment. Invalid values fall back to defaults. */
 export function parseExtra(segment: string | undefined): CatalogExtra {
-  if (!segment) return { search: null, skip: 0 };
+  if (!segment) return { genre: null, search: null, skip: 0 };
   const params = new URLSearchParams(segment);
+  const genre = params.get('genre')?.trim().slice(0, MAX_GENRE_LENGTH) || null;
   const search = params.get('search')?.trim().slice(0, MAX_SEARCH_LENGTH) || null;
   const skipRaw = Number(params.get('skip') ?? '0');
   const skip = Number.isInteger(skipRaw) && skipRaw > 0 ? Math.min(skipRaw, 100_000) : 0;
-  return { search, skip };
+  return { genre, search, skip };
 }
 
 export function channelIdFromStremioId(stremioId: string): string | null {
@@ -81,22 +100,35 @@ function metaPreview(ch: ChannelEntry): Record<string, unknown> {
     name: ch.name,
     ...(ch.logo ? { poster: ch.logo, logo: ch.logo } : {}),
     posterShape: 'square',
-    genres: ch.categories.map(titleCase),
+    genres: [ch.region, ...ch.categories.map(titleCase)],
   };
 }
 
 export function catalogResponse(
   index: CatalogIndex,
-  health: HealthChecker,
+  health: StreamHealth,
   catalogId: string,
   extra: CatalogExtra,
 ): { metas: Record<string, unknown>[] } | null {
   const channels = index.byCatalog.get(catalogId);
   if (!channels) return null;
   const needle = extra.search?.toLowerCase() ?? null;
-  const visible = channels.filter(
-    (ch) => health.hasLiveStream(ch) && (needle === null || ch.name.toLowerCase().includes(needle)),
-  );
+  const limits = index.limits.get(catalogId);
+  const shownPerRegion = new Map<string, number>();
+
+  const visible = channels.filter((ch) => {
+    // Unknown genre values match nothing rather than silently returning everything.
+    if (extra.genre !== null && ch.region !== extra.genre) return false;
+    if (!health.hasLiveStream(ch)) return false;
+    // Apply curation caps after the health filter, so backups replace dead picks.
+    const cap = limits?.get(ch.region);
+    if (cap !== undefined) {
+      const shown = shownPerRegion.get(ch.region) ?? 0;
+      if (shown >= cap) return false;
+      shownPerRegion.set(ch.region, shown + 1);
+    }
+    return needle === null || ch.name.toLowerCase().includes(needle);
+  });
   return { metas: visible.slice(extra.skip, extra.skip + PAGE_SIZE).map(metaPreview) };
 }
 
@@ -107,7 +139,7 @@ export function metaResponse(
   const channelId = channelIdFromStremioId(stremioId);
   const ch = channelId ? index.byId.get(channelId) : undefined;
   if (!ch) return null;
-  const country = COUNTRY_NAMES[ch.country] ?? ch.country;
+  const country = countryName(ch.country);
   const description = [`Live channel · ${country}`, ch.website ? `Website: ${ch.website}` : null]
     .filter(Boolean)
     .join('\n');
@@ -143,11 +175,22 @@ function streamObject(channel: ChannelEntry, s: StreamEntry): Record<string, unk
 
 export function streamResponse(
   index: CatalogIndex,
-  health: HealthChecker,
+  health: StreamHealth,
   stremioId: string,
 ): { streams: Record<string, unknown>[] } | null {
   const channelId = channelIdFromStremioId(stremioId);
   const ch = channelId ? index.byId.get(channelId) : undefined;
   if (!ch) return null;
-  return { streams: health.liveStreams(ch).map((s) => streamObject(ch, s)) };
+  // Direct streams first; official platform pages last, as a fallback that opens externally.
+  return {
+    streams: [...health.liveStreams(ch).map((s) => streamObject(ch, s)), ...ch.watchPages.map(watchPageObject)],
+  };
+}
+
+function watchPageObject(platform: OfficialPlatform): Record<string, unknown> {
+  return {
+    externalUrl: platform.url,
+    name: 'Official',
+    title: [`Watch on ${platform.name} (opens externally)`, platform.note].filter(Boolean).join('\n'),
+  };
 }
